@@ -32,7 +32,8 @@ def load():
 
     # base (ground) sprite
     IMAGES['base'] = pygame.image.load('assets/sprites/base.png').convert_alpha()
-
+       
+    '''
     # sounds
     if 'win' in sys.platform:
         soundExt = '.wav'
@@ -44,7 +45,7 @@ def load():
     SOUNDS['point']  = pygame.mixer.Sound('assets/audio/point' + soundExt)
     SOUNDS['swoosh'] = pygame.mixer.Sound('assets/audio/swoosh' + soundExt)
     SOUNDS['wing']   = pygame.mixer.Sound('assets/audio/wing' + soundExt)
-
+    '''
     # select random background sprites
     IMAGES['background'] = pygame.image.load(BACKGROUND_PATH).convert()
 
