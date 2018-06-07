@@ -6,6 +6,8 @@ import flappy_bird_utils
 import pygame.surfarray as surfarray
 from pygame.locals import *
 from itertools import cycle
+import os, sys
+os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 FPS = 30
 SCREENWIDTH  = 288
