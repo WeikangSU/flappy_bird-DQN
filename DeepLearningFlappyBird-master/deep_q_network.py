@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 from __future__ import print_function
-
 import tensorflow as tf
 import cv2
 import sys
@@ -14,19 +13,28 @@ GAME = 'bird' # the name of the game being played for log files
 ACTIONS = 2 # 能够输出的动作数量（向上或者下降）
 GAMMA = 0.99 # 对于过去观测值得衰减指数
 
-
-REPLAY_MEMORY = 50000 # 记忆矩阵的容量大小（行数）
+REPLAY_MEMORY = 10000 # 记忆矩阵的容量大小
 BATCH = 32 # size of minibatch
 FRAME_PER_ACTION = 1
 
-
 # 最优化训练后的值
-OBSERVE = 100000. # timesteps to observe before training
-EXPLORE = 2000000. # frames over which to anneal epsilon
+OBSERVE = 10000 # timesteps to observe before training
+EXPLORE = 1000000 # frames over which to anneal epsilon
 FINAL_EPSILON = 0.0001 # final value of epsilon
-INITIAL_EPSILON = 0.1 # starting value of epsilon(以epsilon的概率随机选择动作，以1-epsilon的概率选择有最大q值的action)
+INITIAL_EPSILON = 0.8 # starting value of epsilon(以epsilon的概率随机选择动作，以1-epsilon的概率选择有最大q值的action)
 
 
+class Logger(object):
+    def __init__(self, fileN="Default.log"):
+        self.terminal = sys.stdout
+        self.log = open(fileN, "a+")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        pass
 
 def weight_variable(shape):    # 定义用于创建神经网络的权重变量weights的函数
     initial = tf.truncated_normal(shape, stddev = 0.01)
@@ -111,13 +119,10 @@ def trainNetwork(s, readout, h_fc1, sess):
     y = tf.placeholder("float", [None])
     readout_action = tf.reduce_sum(tf.multiply(readout, a), reduction_indices=1)
 
-    with tf.name_scope('cost'):
-        cost = tf.reduce_mean(tf.square(y - readout_action))    # 定义损失函数
-        tf.summary.scalar('cost',cost)  # 可视化常量
+    #with tf.name_scope('cost'):
+    cost = tf.reduce_mean(tf.square(y - readout_action))    # 定义损失函数
 
     train_step = tf.train.AdamOptimizer(1e-6).minimize(cost)    # 定义最小化损失函数优化器
-
-    writer = tf.summary.FileWriter("/Users/mymac/Desktop/board/", sess.graph)
 
     # 开启与游戏模拟器环境的交互
     game_state = game.GameState()
@@ -125,10 +130,6 @@ def trainNetwork(s, readout, h_fc1, sess):
     # store the previous observations in replay memory
     # 用于存储过去的observation的双端队列
     D = deque()
-
-    # printing
-    a_file = open("logs_" + GAME + "/readout.txt", 'w')
-    h_file = open("logs_" + GAME + "/hidden.txt", 'w')
 
     # get the first state by doing nothing and preprocess the image to 80x80x4
     do_nothing = np.zeros(ACTIONS)  # action数目为2，所以这里返回[0，0]
@@ -146,7 +147,7 @@ def trainNetwork(s, readout, h_fc1, sess):
     # 存储和加载网络训练参数
     saver = tf.train.Saver()
     sess.run(tf.initialize_all_variables())
-    checkpoint = tf.train.get_checkpoint_state("saved_networks")
+    #checkpoint = tf.train.get_checkpoint_state("saved_networks")
     '''
     if checkpoint and checkpoint.model_checkpoint_path:
     #if checkpoint == 0:
@@ -160,9 +161,10 @@ def trainNetwork(s, readout, h_fc1, sess):
     epsilon = INITIAL_EPSILON
     t = 0  # 初始化time step
     episode = 1
-    score_list = []
     score_temp = []
-
+    sum_reward = []
+    # output log to txt file
+    sys.stdout = Logger("result.txt")
     while True:
         # 使用epsilon greedy的方法选择动作
         readout_t = readout.eval(feed_dict={s : [s_t]})[0]  # 把当前的初始状态s_t输入神经网络得出action的q值
@@ -170,10 +172,18 @@ def trainNetwork(s, readout, h_fc1, sess):
         action_index = 0
         if t % FRAME_PER_ACTION == 0:   # FRAME_PER_ACTION参数控制每一帧有多少个动作，这里设置为1，所以每个time step选1次动作
             if random.random() <= epsilon:
-                # print("----------Random Action----------")
-                action_index = random.randrange(ACTIONS)
-                a_t[random.randrange(ACTIONS)] = 1
+                #print("----------Random Action----------")
+                #action_index = random.randrange(ACTIONS)
+                #a_t[random.randrange(ACTIONS)] = 1
+                #'''
+                if random.random() <= 0.9:
+                    #print("----------Random Action   down----------")
+                    a_t[0] = 1
+                else:
+                    a_t[1] = 1
+                #'''
             else:
+                #print('Q_Max', np.argmax(readout_t))
                 action_index = np.argmax(readout_t)
                 a_t[action_index] = 1
         else:       #如果FRAME_PER_ACTION不为一的话，那么周期内其他时间的timestep默认做down动作
@@ -239,7 +249,7 @@ def trainNetwork(s, readout, h_fc1, sess):
         t += 1      # 进入next step
 
         # save progress every 10000 iterations
-        if t % 10000 == 0:
+        if t % 50000 == 0:
             saver.save(sess, 'saved_networks/' + GAME + '-dqn', global_step = t)
 
         # 于命令行打印状态信息
@@ -254,39 +264,29 @@ def trainNetwork(s, readout, h_fc1, sess):
         '''
         print("TIMESTEP", t, "/ STATE", state, \
             "/ EPSILON", epsilon, "/ ACTION", action_index, "/ REWARD", r_t, \
-            "/ Q_MAX %e" % np.max(readout_t))
-        '''
-        # write info to files
-        '''
-        if t % 10000 <= 100:
-            a_file.write(",".join([str(x) for x in readout_t]) + '\n')
-            h_file.write(",".join([str(x) for x in h_fc1.eval(feed_dict={s:[s_t]})[0]]) + '\n')
-            cv2.imwrite("logs_tetris/frame" + str(t) + ".png", x_t1)
+            "/ Q_MAX %e" % np.argmax(readout_t))
         '''
 
+        sum_reward.append(r_t)
         # 当episode结束时，输出episode对应的分数
         score_temp.append (score)
         if terminal is True:
-            score_list.append(score_temp[-2])
-            print('time_step=',t,' / episode == ', episode, '   / score == ', score_temp[-2],  ' / score_list: ',score_list)
-            if (episode % 10 == 0):
-                print('cumulative average score : ', np.average(score_list))
-            avg_score = float(np.average(score_list))
-            avg = tf.summary.scalar('avg',avg_score)
-            writer.add_summary(avg, episode)
+
+            #sys.stdout = Logger("result.txt")
+            print('time_step==',t,'/episode==', episode, '/sum_reward==',sum(sum_reward),
+                  '/score==', max(score_temp), '/EPSILON==',epsilon)
 
             episode += 1
             score_temp = []
-
-        #print(score_list)
-        #print('episode',episode,'/ score',score)
+            sum_reward = []
 
 
-# 构造主函数
+
 def playGame():
     sess = tf.InteractiveSession()
     s, readout, h_fc1 = createNetwork()
     trainNetwork(s, readout, h_fc1, sess)
+
 
 def main():
     playGame()
